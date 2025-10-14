@@ -1,9 +1,11 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Response
+from fastapi.responses import JSONResponse
 from datetime import date
-from typing import Optional
+from typing import Optional, Any
 from sqlmodel import *
 from accountClasses import *
 from transactionClasses import *
+from random import *
 
 app = FastAPI()
 
@@ -31,7 +33,7 @@ class Account(SQLModel, table=True):
 
 class Transaction(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    type: str = Field(index=True)
+    transactionType: str = Field(index=True)
     transaction_date: Optional[date] = Field(sa_column=Column(
         TIMESTAMP(timezone=True),
         nullable=False,
@@ -117,7 +119,7 @@ def deposit():
     return {}
 
 def CreateTransaction(outAccountId,entryAccountId,transactionType,amount, session = Depends(get_session)):
-    transaction = Transaction(type=transactionType,start_account_id=entryAccountId,end_account_id=outAccountId,
+    transaction = Transaction(transactionType=transactionType,start_account_id=entryAccountId,end_account_id=outAccountId,
                               amount=amount)
     session.add(transaction)
     session.commit()
@@ -125,7 +127,7 @@ def CreateTransaction(outAccountId,entryAccountId,transactionType,amount, sessio
     return transaction
 
 @app.put("/send") # Story 7
-def send(body: GetSendInformation, session = Depends(get_session)) -> Transaction:
+def send(body: GetSendInformation, session = Depends(get_session)):
     send_account = session.get(Account,body.send_account_id)
     if send_account.amount >= body.amount and body.amount > 0 and body.send_account_id != body.receive_account_id:
         send_account.amount -= body.amount
@@ -134,9 +136,14 @@ def send(body: GetSendInformation, session = Depends(get_session)) -> Transactio
         session.commit()
         session.refresh(send_account)
         session.refresh(receive_account)
-        return CreateTransaction(body.receive_account_id,body.send_account_id,"Send",body.amount)
+        CreateTransaction(body.receive_account_id,body.send_account_id,"Send",body.amount)
+        return JSONResponse(content={"SUCCESS":"Transaction effectuée"})
+    elif send_account.amount < body.amount:
+        return JSONResponse(content={"ERROR":"Fonds insuffisant"})
+    elif body.send_account_id != body.receive_account_id:
+        return JSONResponse(content={"ERROR":"Le compte destinataire doit être différent du compte d'envoi"})
     else:
-        return null
+        return JSONResponse(content={"ERROR":"Montant Négatif"})
 
 @app.put("/cancel") # Story 10
 def cancel():
@@ -152,9 +159,17 @@ def closeAccount():
 def createUser():
     return {}
 
+def createAccount(user_id,type,amount, session = Depends(get_session)):
+    accountNumber = randint(10000000)
+    account = Account(type=type,amount=amount,user_id=user_id,account_number=accountNumber)
+    session.add(account)
+    session.commit()
+    session.refresh(account)
+
 @app.post("/open-account") # Story 4 / 11
-def openAccount():
-    return {}
+def openAccount(body: CreateAccount, session = Depends(get_session)):
+    CreateAccount(body.user_id,"Secondaire",0)
+    return {"SUCCESS":"Compte ouvert"}
 
 @app.post("/beneficiary") # Story 14
 def beneficiary():
