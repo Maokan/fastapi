@@ -156,8 +156,12 @@ def closeAccount():
 # Requêtes POST
 
 @app.post("/sign-in") # Story 1
-def createUser():
-    return {}
+def createUser(session = Depends(get_session)):
+    user = User(username="Test API",adress_mail="test@gmail.com",password="test1234",name="API",first_name="Test")
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return {"SUCCESS":"Utilisateur créé avec succès"}
 
 def createAccount(user_id,type,amount, session = Depends(get_session)):
     accountNumber = randint(10000000)
