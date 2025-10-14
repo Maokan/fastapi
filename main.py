@@ -3,6 +3,7 @@ from datetime import date
 from typing import Optional
 from sqlmodel import *
 from accountClasses import *
+from transactionClasses import *
 
 app = FastAPI()
 
@@ -115,9 +116,27 @@ def beneficiaries():
 def deposit():
     return {}
 
+def CreateTransaction(outAccountId,entryAccountId,transactionType,amount, session = Depends(get_session)):
+    transaction = Transaction(type=transactionType,start_account_id=entryAccountId,end_account_id=outAccountId,
+                              amount=amount)
+    session.add(transaction)
+    session.commit()
+    session.refresh(transaction)
+    return transaction
+
 @app.put("/send") # Story 7
-def send():
-    return {}
+def send(body: GetSendInformation, session = Depends(get_session)) -> Transaction:
+    send_account = session.get(Account,body.send_account_id)
+    if send_account.amount >= body.amount and body.amount > 0 and body.send_account_id != body.receive_account_id:
+        send_account.amount -= body.amount
+        receive_account = session.get(Account,body.receive_account_id)
+        receive_account.amount += body.amount
+        session.commit()
+        session.refresh(send_account)
+        session.refresh(receive_account)
+        return CreateTransaction(body.receive_account_id,body.send_account_id,"Send",body.amount)
+    else:
+        return null
 
 @app.put("/cancel") # Story 10
 def cancel():
