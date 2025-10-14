@@ -1,7 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from datetime import date
 from typing import Optional
-from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text, Session, create_engine
+from sqlmodel import *
+from accountClasses import *
 
 app = FastAPI()
 
@@ -86,12 +87,15 @@ def user():
     return {}
 
 @app.get("/account") # Story 5
-def account():
-    return {}
+def account(body: GetAccount, session = Depends(get_session)) -> Account:
+    account = session.get(Account,body.id)
+    return account
+
 
 @app.get("/accounts") # Story 9
-def accounts():
-    return {}
+def accounts(body: GetAccounts, session = Depends(get_session)) -> list[Account]:
+    accounts = session.exec(select(Account)).where(Account.user_id == body.user_id)
+    return accounts
 
 @app.get("/transactions") # Story 8
 def transactions():
