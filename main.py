@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, Response
 from fastapi.responses import JSONResponse
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional, Any
 from sqlmodel import *
 from accountClasses import *
@@ -37,10 +37,10 @@ class Account(SQLModel, table=True):
 class Transaction(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     type: str = Field(index=True)
-    transaction_date: Optional[date] = Field(sa_column=Column(
+    transaction_date: Optional[datetime] = Field(sa_column=Column(
         TIMESTAMP(timezone=True),
         nullable=False,
-        server_default=text("CURRENT_DATE"),
+        server_default=text("CURRENT_DATETIME"),
         index=True
     ))
     amount: float = Field(index=True)
@@ -77,6 +77,32 @@ def get_session():
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables()
+    asyncio.create_task(batch())
+
+async def batch():
+    while True:
+        await validateTransactions()
+        await asyncio.sleep(10)
+
+async def validateTransactions():
+    with Session(engine) as session:
+        five_seconds_ago = datetime.now() - timedelta(seconds=5)
+        transactions = session.exec(
+            select(Transaction).where(
+                Transaction.status == "En cours",
+                Transaction.type == "Send",
+                Transaction.transaction_date < five_seconds_ago
+            )
+        ).all()
+        for transaction in transactions:
+            transaction.status = "Validée"
+            account = session.get(Account, transaction.end_account_id)
+            account.amount += transaction.amount
+            session.commit()
+            session.refresh(account)
+            session.refresh(transaction)
+        print(f"[DEBUG] Batch exécuté à {datetime.now()}, {len(transactions)} transactions validées.")
+        pass
     
 # Requêtes GET
 
@@ -149,47 +175,21 @@ def confirmTransaction(transactionId, session):
     session.refresh(transaction)
     return transaction
 
-def cancelTransaction(transactionId, session):
-    transaction = session.get(Transaction,transactionId)
-    transaction.status = "Annulée"
-    session.commit()
-    session.refresh(transaction)
-    return transaction
-
-# Dictionnaire pour stocker les events d'attente par compte
-pending_send_events = {}
-
 @app.put("/send") # Story 7
 async def send(body: GetSendInformation, session = Depends(get_session)):
-    # Crée un event pour ce compte
-    event = asyncio.Event()
-    pending_send_events[body.send_account_id] = event
-    transaction = CreateTransaction(body.receive_account_id,body.send_account_id,"Send",body.amount,session)
-    try:
-        # Attente de 5 secondes ou annulation
-        await asyncio.wait_for(event.wait(), timeout=5)
-        confirmTransaction(transaction.id, session)
-        send_account = session.get(Account,body.send_account_id)
-        if send_account.amount >= body.amount and body.amount > 0 and body.send_account_id != body.receive_account_id:
-            send_account.amount -= body.amount
-            receive_account = session.get(Account,body.receive_account_id)
-            receive_account.amount += body.amount
-            session.commit()
-            session.refresh(send_account)
-            session.refresh(receive_account)
-            return JSONResponse(content={"SUCCESS":"Transaction effectuée"})
-        elif send_account.amount < body.amount:
-            return JSONResponse(content={"ERROR":"Fonds insuffisant"})
-        elif body.send_account_id != body.receive_account_id:
-            return JSONResponse(content={"ERROR":"Le compte destinataire doit être différent du compte d'envoi"})
-        else:
-            return JSONResponse(content={"ERROR":"Montant Négatif"})
-    except asyncio.TimeoutError:
-        cancelTransaction(transaction.id, session)
-        return {"message": f"Envoi annulé pour le compte {body.send_account_id}"}
-    finally:
-        # Nettoyage de l'event
-        pending_send_events.pop(body.send_account_id, None)
+    send_account = session.get(Account,body.send_account_id)
+    if send_account.amount >= body.amount and body.amount > 0 and body.send_account_id != body.receive_account_id:
+        send_account.amount -= body.amount
+        session.commit()
+        session.refresh(send_account)
+        CreateTransaction(body.receive_account_id,body.send_account_id,"Send",body.amount,session)
+        return JSONResponse(content={"SUCCESS":"Transaction effectuée"})
+    elif send_account.amount < body.amount:
+        return JSONResponse(content={"ERROR":"Fonds insuffisant"})
+    elif body.send_account_id != body.receive_account_id:
+        return JSONResponse(content={"ERROR":"Le compte destinataire doit être différent du compte d'envoi"})
+    else:
+        return JSONResponse(content={"ERROR":"Montant Négatif"})
 
 @app.put("/close-account") # Story 12
 def closeAccount(body: CloseAccount, session = Depends(get_session)):
@@ -217,13 +217,15 @@ def closeAccount(body: CloseAccount, session = Depends(get_session)):
     return {"SUCCESS":"Compte fermé"}
 
 @app.put("/cancel") # Story 10
-async def cancel(body: CancelTransaction):
-    event = pending_send_events.get(body.account_id)
-    if event:
-        event.set()
-        return {"message": f"Annulation reçue pour le compte {body.account_id}"}
-    else:
-        return {"message": f"Aucune opération d'envoi en attente pour le compte {body.account_id}"}
+async def cancel(body: CancelTransaction,session = Depends(get_session)):
+    transaction = session.get(Transaction,body.transaction_id)
+    transaction.status = "Annulée"
+    account = session.get(Account,transaction.start_account_id)
+    account.amount+=transaction.amount
+    session.commit()
+    session.refresh(account)
+    session.refresh(transaction)
+    return {"SUCCESS":"Transaction annulée"}
 
 # Requêtes POST
 

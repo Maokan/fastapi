@@ -6,4 +6,4 @@ class GetSendInformation(BaseModel):
     amount:float
 
 class CancelTransaction(BaseModel):
-    account_id:int
+    transaction_id:int
