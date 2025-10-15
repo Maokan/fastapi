@@ -1,8 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, Response
+from fastapi.responses import JSONResponse
 from datetime import date
-from typing import Optional
-from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text, Session, create_engine
+from typing import Optional, Any
+from sqlmodel import *
+from accountClasses import *
+from transactionClasses import *
+from random import *
 
+print("[DEBUG] Début du chargement de main.py")
 app = FastAPI()
 
 class User(SQLModel, table=True):
@@ -86,12 +91,15 @@ def user():
     return {}
 
 @app.get("/account") # Story 5
-def account():
-    return {}
+def account(body: GetAccount, session = Depends(get_session)) -> Account:
+    account = session.get(Account,body.id)
+    return account
+
 
 @app.get("/accounts") # Story 9
-def accounts():
-    return {}
+def accounts(body: GetAccounts, session = Depends(get_session)) -> list[Account]:
+    accounts = session.exec(select(Account).where(Account.user_id == body.user_id).order_by(col(Account.id).desc())).all()
+    return accounts
 
 @app.get("/transactions") # Story 8
 def transactions():
@@ -108,12 +116,48 @@ def beneficiaries():
 # Requêtes PUT
 
 @app.put("/deposit") # Story 6
-def deposit():
-    return {}
+def deposit(body: SetDeposit, session = Depends(get_session)):
+    if body.amount > 0 and body.amount <= 2000:
+        account = session.get(Account,body.account_id)
+        account.amount += body.amount
+        session.commit()
+        session.refresh(account)
+        CreateTransaction(body.receive_account_id,0,"Deposit",body.amount)
+        return {"Nouveau Solde":account.amount}
+    elif body.amount > 0:
+        return {"ERROR":"Montant supérieur à 2000"}
+    else:
+        return {"ERROR":"Montant négatif"}
+
+def CreateTransaction(outAccountId,entryAccountId,transactionType,amount, session):
+    if entryAccountId == 0:
+        transaction = Transaction(type=transactionType,end_account_id=outAccountId,amount=amount)
+    else:
+        transaction = Transaction(type=transactionType,start_account_id=entryAccountId,end_account_id=outAccountId,
+                              amount=amount)
+    session.add(transaction)
+    session.commit()
+    session.refresh(transaction)
+    return transaction
 
 @app.put("/send") # Story 7
-def send():
-    return {}
+def send(body: GetSendInformation, session = Depends(get_session)):
+    send_account = session.get(Account,body.send_account_id)
+    if send_account.amount >= body.amount and body.amount > 0 and body.send_account_id != body.receive_account_id:
+        send_account.amount -= body.amount
+        receive_account = session.get(Account,body.receive_account_id)
+        receive_account.amount += body.amount
+        session.commit()
+        session.refresh(send_account)
+        session.refresh(receive_account)
+        CreateTransaction(body.receive_account_id,body.send_account_id,"Send",body.amount,session)
+        return JSONResponse(content={"SUCCESS":"Transaction effectuée"})
+    elif send_account.amount < body.amount:
+        return JSONResponse(content={"ERROR":"Fonds insuffisant"})
+    elif body.send_account_id != body.receive_account_id:
+        return JSONResponse(content={"ERROR":"Le compte destinataire doit être différent du compte d'envoi"})
+    else:
+        return JSONResponse(content={"ERROR":"Montant Négatif"})
 
 @app.put("/cancel") # Story 10
 def cancel():
@@ -126,12 +170,12 @@ def closeAccount():
 # Requêtes POST
 
 @app.post("/sign-in") # Story 1
-def createUser():
-    return {}
+def createUser(session = Depends(get_session)):
+    return {"SUCCESS":"Utilisateur créé avec succès"}
 
 @app.post("/open-account") # Story 4 / 11
-def openAccount():
-    return {}
+def openAccount(session = Depends(get_session)):
+    return {"SUCCESS":"Compte ouvert"}
 
 @app.post("/beneficiary") # Story 14
 def beneficiary():
