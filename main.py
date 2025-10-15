@@ -130,12 +130,14 @@ def user():
 @app.get("/account") # Story 5
 def account(body: GetAccount, session = Depends(get_session)) -> Account:
     account = session.get(Account,body.id)
-    return account
+    if account.open:
+        return account
+    return {"ERROR":"Compte innexistant"}
 
 
 @app.get("/accounts") # Story 9
 def accounts(body: GetAccounts, session = Depends(get_session)) -> list[Account]:
-    accounts = session.exec(select(Account).where(Account.user_id == body.user_id).order_by(col(Account.id).desc())).all()
+    accounts = session.exec(select(Account).where(Account.user_id == body.user_id,Account.open == true).order_by(col(Account.id).desc())).all()
     return accounts
 
 @app.get("/transactions")
@@ -166,29 +168,12 @@ def CreateTransaction(outAccountId, entryAccountId, transactionType, amount, ses
     session.refresh(transaction)
     return transaction
 
-@app.put("/send")
-def send(body: GetSendInformation, session=Depends(get_session)):
-    send_account = session.get(Account, body.send_account_id)
-    receive_account = session.get(Account, body.receive_account_id)
-
-    if body.amount <= 0:
-        return JSONResponse(content={"ERROR": "Montant négatif ou nul"})
-    if body.send_account_id == body.receive_account_id:
-        return JSONResponse(content={"ERROR": "Le compte destinataire doit être différent"})
-    if send_account.amount < body.amount:
-        return JSONResponse(content={"ERROR": "Fonds insuffisants"})
-
-    send_account.amount -= body.amount
-    receive_account.amount += body.amount
-    session.commit()
-
-    CreateTransaction(body.receive_account_id, body.send_account_id, "Send", body.amount, session)
-    return JSONResponse(content={"SUCCESS": "Transaction effectuée"})
-
 @app.put("/deposit")
 def deposit(body: SetDeposit, session = Depends(get_session)):
     if body.amount > 0 and body.amount <= 2000:
         account = session.get(Account,body.account_id)
+        if account.open == False or account is None:
+            return {"ERROR":"Le compte doit être ouvert pour effectuer un dépôt"}
         account.amount += body.amount
         session.commit()
         session.refresh(account)
@@ -220,7 +205,7 @@ def confirmTransaction(transactionId, session):
 @app.put("/send") # Story 7
 async def send(body: GetSendInformation, session = Depends(get_session)):
     send_account = session.get(Account,body.send_account_id)
-    if send_account.amount >= body.amount and body.amount > 0 and body.send_account_id != body.receive_account_id:
+    if send_account.amount >= body.amount and body.amount > 0 and body.send_account_id != body.receive_account_id and send_account.open == True:
         send_account.amount -= body.amount
         session.commit()
         session.refresh(send_account)
@@ -230,12 +215,16 @@ async def send(body: GetSendInformation, session = Depends(get_session)):
         return JSONResponse(content={"ERROR":"Fonds insuffisant"})
     elif body.send_account_id != body.receive_account_id:
         return JSONResponse(content={"ERROR":"Le compte destinataire doit être différent du compte d'envoi"})
+    elif body.amount <= 0:
+        return JSONResponse(content={"ERROR":"Montant Négatif ou nul"})
     else:
-        return JSONResponse(content={"ERROR":"Montant Négatif"})
+        return JSONResponse(content={"ERROR":"Le compte doit être ouvert pour effectuer un virement"})
 
 @app.put("/close-account") # Story 12
 def closeAccount(body: CloseAccount, session = Depends(get_session)):
     account = session.get(Account,body.account_id)
+    if account is None or account.open == False:
+        return JSONResponse(content={"ERROR":"Le compte n'existe pas ou est déjà fermé"})
     if account.type == "Principal":
         return JSONResponse(content={"ERROR":"Vous ne pouvez pas fermer un compte principal"})
     transactions = session.exec(select(Transaction).where((Transaction.start_account_id == account.id) 
