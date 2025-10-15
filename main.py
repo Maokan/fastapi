@@ -98,7 +98,7 @@ def account(body: GetAccount, session = Depends(get_session)) -> Account:
 
 @app.get("/accounts") # Story 9
 def accounts(body: GetAccounts, session = Depends(get_session)) -> list[Account]:
-    accounts = session.exec(select(Account).where(Account.user_id == body.user_id))
+    accounts = session.exec(select(Account).where(Account.user_id == body.user_id).order_by(col(Account.id).desc())).all()
     return accounts
 
 @app.get("/transactions") # Story 8
@@ -169,28 +169,13 @@ def closeAccount():
 
 # Requêtes POST
 
-print("[DEBUG] Avant déclaration de la route /sign-in")
 @app.post("/sign-in") # Story 1
 def createUser(session = Depends(get_session)):
-    print("[DEBUG] Dans createUser")
-    user = User(username="Test API 2",adress_mail="test@gmail.com",password="test1234",name="API",first_name="Test")
-    session.add(user)
-    session.commit()
-    session.refresh(user)
-    return {"SUCCESS":"Utilisateur créé avec succès","ID":user.id}
-
-def createAccount(user_id,type,amount, session = Depends(get_session)):
-    accountNumber = randint(1,10000000)
-    account = Account(type=type,amount=amount,user_id=user_id,account_number=accountNumber)
-    session.add(account)
-    session.commit()
-    session.refresh(account)
-    return account
+    return {"SUCCESS":"Utilisateur créé avec succès"}
 
 @app.post("/open-account") # Story 4 / 11
-def openAccount(body: CreateAccount, session = Depends(get_session)):
-    account = createAccount(body.user_id,"Secondaire",0,session)
-    return {"SUCCESS":"Compte ouvert","ID":account.id}
+def openAccount(session = Depends(get_session)):
+    return {"SUCCESS":"Compte ouvert"}
 
 @app.post("/beneficiary") # Story 14
 def beneficiary():
