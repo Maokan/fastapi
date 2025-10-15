@@ -1,12 +1,13 @@
 from fastapi import FastAPI, Depends, Response
 from fastapi.responses import JSONResponse
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional, Any
 from sqlmodel import *
 from accountClasses import *
 from transactionClasses import *
 from pydantic import BaseModel
 from random import *
+import asyncio
 
 print("[DEBUG] Début du chargement de main.py")
 app = FastAPI()
@@ -41,11 +42,11 @@ class Account(SQLModel, table=True):
 
 class Transaction(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    transactionType: str = Field(index=True)
-    transaction_date: Optional[date] = Field(sa_column=Column(
+    type: str = Field(index=True)
+    transaction_date: Optional[datetime] = Field(sa_column=Column(
         TIMESTAMP(timezone=True),
         nullable=False,
-        server_default=text("CURRENT_DATE"),
+        server_default=text("CURRENT_DATETIME"),
         index=True
     ))
     amount: float = Field(index=True)
@@ -83,7 +84,34 @@ def get_session():
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables()
+    asyncio.create_task(batch())
     
+async def batch():
+    while True:
+        await validateTransactions()
+        await asyncio.sleep(10)
+
+async def validateTransactions():
+    with Session(engine) as session:
+        five_seconds_ago = datetime.now() - timedelta(seconds=5)
+        transactions = session.exec(
+            select(Transaction).where(
+                Transaction.status == "En cours",
+                Transaction.type == "Send",
+                Transaction.transaction_date < five_seconds_ago
+            )
+        ).all()
+        for transaction in transactions:
+            transaction.status = "Validée"
+            account = session.get(Account, transaction.end_account_id)
+            account.amount += transaction.amount
+            session.commit()
+            session.refresh(account)
+            session.refresh(transaction)
+        print(f"[DEBUG] Batch exécuté à {datetime.now()}, {len(transactions)} transactions validées.")
+        pass
+    
+
 # ======================
 # SCHEMAS Pydantic
 # ======================
@@ -202,16 +230,20 @@ def CreateTransaction(outAccountId,entryAccountId,transactionType,amount, sessio
     session.refresh(transaction)
     return transaction
 
+def confirmTransaction(transactionId, session):
+    transaction = session.get(Transaction,transactionId)
+    transaction.status = "Validée"
+    session.commit()
+    session.refresh(transaction)
+    return transaction
+
 @app.put("/send") # Story 7
-def send(body: GetSendInformation, session = Depends(get_session)):
+async def send(body: GetSendInformation, session = Depends(get_session)):
     send_account = session.get(Account,body.send_account_id)
     if send_account.amount >= body.amount and body.amount > 0 and body.send_account_id != body.receive_account_id:
         send_account.amount -= body.amount
-        receive_account = session.get(Account,body.receive_account_id)
-        receive_account.amount += body.amount
         session.commit()
         session.refresh(send_account)
-        session.refresh(receive_account)
         CreateTransaction(body.receive_account_id,body.send_account_id,"Send",body.amount,session)
         return JSONResponse(content={"SUCCESS":"Transaction effectuée"})
     elif send_account.amount < body.amount:
@@ -221,13 +253,41 @@ def send(body: GetSendInformation, session = Depends(get_session)):
     else:
         return JSONResponse(content={"ERROR":"Montant Négatif"})
 
-@app.put("/cancel") # Story 10
-def cancel():
-    return {}
+@app.put("/close-account") # Story 12
+def closeAccount(body: CloseAccount, session = Depends(get_session)):
+    account = session.get(Account,body.account_id)
+    if account.type == "Principal":
+        return JSONResponse(content={"ERROR":"Vous ne pouvez pas fermer un compte principal"})
+    transactions = session.exec(select(Transaction).where((Transaction.start_account_id == account.id) 
+                                                          | (Transaction.end_account_id == account.id)
+                                                          , Transaction.status == "En cours")).all()
+    if len(transactions) > 0:
+        return JSONResponse(content={"ERROR":"Vous ne pouvez pas fermer un compte avec des transactions associées"})
+    account.open = False
+    if account.amount != 0:
+        user = session.get(User,account.user_id)
+        mainAccount = session.exec(select(Account).where(Account.user_id == user.id,Account.type == "Principal",Account.open == True)).first()
+        if mainAccount is None:
+            return JSONResponse(content={"ERROR":"Vous devez posséder un compte principal ouvert pour fermer ce compte"})
+        else:
+            mainAccount.amount += account.amount
+            session.commit()
+            session.refresh(mainAccount)
+            CreateTransaction(mainAccount.id,account.id,"Transfer",account.amount,session)
+    session.commit()
+    session.refresh(account)
+    return {"SUCCESS":"Compte fermé"}
 
-@app.put("/close-account")
-def closeAccount():
-    return {}
+@app.put("/cancel") # Story 10
+async def cancel(body: CancelTransaction,session = Depends(get_session)):
+    transaction = session.get(Transaction,body.transaction_id)
+    transaction.status = "Annulée"
+    account = session.get(Account,transaction.start_account_id)
+    account.amount+=transaction.amount
+    session.commit()
+    session.refresh(account)
+    session.refresh(transaction)
+    return {"SUCCESS":"Transaction annulée"}
 
 # ======================
 # ROUTES POST
