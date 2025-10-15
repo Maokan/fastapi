@@ -7,6 +7,7 @@ from accountClasses import *
 from transactionClasses import *
 from random import *
 
+print("[DEBUG] Début du chargement de main.py")
 app = FastAPI()
 
 class User(SQLModel, table=True):
@@ -33,7 +34,7 @@ class Account(SQLModel, table=True):
 
 class Transaction(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    transactionType: str = Field(index=True)
+    type: str = Field(index=True)
     transaction_date: Optional[date] = Field(sa_column=Column(
         TIMESTAMP(timezone=True),
         nullable=False,
@@ -97,7 +98,7 @@ def account(body: GetAccount, session = Depends(get_session)) -> Account:
 
 @app.get("/accounts") # Story 9
 def accounts(body: GetAccounts, session = Depends(get_session)) -> list[Account]:
-    accounts = session.exec(select(Account)).where(Account.user_id == body.user_id)
+    accounts = session.exec(select(Account).where(Account.user_id == body.user_id))
     return accounts
 
 @app.get("/transactions") # Story 8
@@ -115,11 +116,24 @@ def beneficiaries():
 # Requêtes PUT
 
 @app.put("/deposit") # Story 6
-def deposit():
-    return {}
+def deposit(body: SetDeposit, session = Depends(get_session)):
+    if body.amount > 0 and body.amount <= 2000:
+        account = session.get(Account,body.account_id)
+        account.amount += body.amount
+        session.commit()
+        session.refresh(account)
+        CreateTransaction(body.receive_account_id,0,"Deposit",body.amount)
+        return {"Nouveau Solde":account.amount}
+    elif body.amount > 0:
+        return {"ERROR":"Montant supérieur à 2000"}
+    else:
+        return {"ERROR":"Montant négatif"}
 
-def CreateTransaction(outAccountId,entryAccountId,transactionType,amount, session = Depends(get_session)):
-    transaction = Transaction(transactionType=transactionType,start_account_id=entryAccountId,end_account_id=outAccountId,
+def CreateTransaction(outAccountId,entryAccountId,transactionType,amount, session):
+    if entryAccountId == 0:
+        transaction = Transaction(type=transactionType,end_account_id=outAccountId,amount=amount)
+    else:
+        transaction = Transaction(type=transactionType,start_account_id=entryAccountId,end_account_id=outAccountId,
                               amount=amount)
     session.add(transaction)
     session.commit()
@@ -136,7 +150,7 @@ def send(body: GetSendInformation, session = Depends(get_session)):
         session.commit()
         session.refresh(send_account)
         session.refresh(receive_account)
-        CreateTransaction(body.receive_account_id,body.send_account_id,"Send",body.amount)
+        CreateTransaction(body.receive_account_id,body.send_account_id,"Send",body.amount,session)
         return JSONResponse(content={"SUCCESS":"Transaction effectuée"})
     elif send_account.amount < body.amount:
         return JSONResponse(content={"ERROR":"Fonds insuffisant"})
@@ -155,25 +169,28 @@ def closeAccount():
 
 # Requêtes POST
 
+print("[DEBUG] Avant déclaration de la route /sign-in")
 @app.post("/sign-in") # Story 1
 def createUser(session = Depends(get_session)):
-    user = User(username="Test API",adress_mail="test@gmail.com",password="test1234",name="API",first_name="Test")
+    print("[DEBUG] Dans createUser")
+    user = User(username="Test API 2",adress_mail="test@gmail.com",password="test1234",name="API",first_name="Test")
     session.add(user)
     session.commit()
     session.refresh(user)
-    return {"SUCCESS":"Utilisateur créé avec succès"}
+    return {"SUCCESS":"Utilisateur créé avec succès","ID":user.id}
 
 def createAccount(user_id,type,amount, session = Depends(get_session)):
-    accountNumber = randint(10000000)
+    accountNumber = randint(1,10000000)
     account = Account(type=type,amount=amount,user_id=user_id,account_number=accountNumber)
     session.add(account)
     session.commit()
     session.refresh(account)
+    return account
 
 @app.post("/open-account") # Story 4 / 11
 def openAccount(body: CreateAccount, session = Depends(get_session)):
-    CreateAccount(body.user_id,"Secondaire",0)
-    return {"SUCCESS":"Compte ouvert"}
+    account = createAccount(body.user_id,"Secondaire",0,session)
+    return {"SUCCESS":"Compte ouvert","ID":account.id}
 
 @app.post("/beneficiary") # Story 14
 def beneficiary():
