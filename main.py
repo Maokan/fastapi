@@ -233,6 +233,18 @@ def closeAccount():
 # ROUTES POST
 # ======================
 
+def createAccount(user_id: int, type: str, session):
+    accountNumber = randint(10000000, 99999999)
+    if ( type == "Principal" ):
+        startamount = 100
+    else:
+        startamount = 0
+    account = Account(type=type, amount=startamount, user_id=user_id, account_number=str(accountNumber))
+    session.add(account)
+    session.commit()
+    session.refresh(account)
+    return account
+
 @app.post("/sign-in") # Story 1
 def createUser(session = Depends(get_session)):
     return {"SUCCESS":"Utilisateur créé avec succès"}
