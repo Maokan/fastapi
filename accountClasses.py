@@ -9,3 +9,6 @@ class GetAccounts(BaseModel):
 
 class GetAccount(BaseModel):
     id:int
+
+class CloseAccount(BaseModel):
+    account_id:int

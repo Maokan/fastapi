@@ -6,9 +6,11 @@ from sqlmodel import *
 from accountClasses import *
 from transactionClasses import *
 from random import *
+import asyncio
 
 print("[DEBUG] Début du chargement de main.py")
 app = FastAPI()
+interrupt_event = asyncio.Event()
 
 class User(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
@@ -140,32 +142,88 @@ def CreateTransaction(outAccountId,entryAccountId,transactionType,amount, sessio
     session.refresh(transaction)
     return transaction
 
-@app.put("/send") # Story 7
-def send(body: GetSendInformation, session = Depends(get_session)):
-    send_account = session.get(Account,body.send_account_id)
-    if send_account.amount >= body.amount and body.amount > 0 and body.send_account_id != body.receive_account_id:
-        send_account.amount -= body.amount
-        receive_account = session.get(Account,body.receive_account_id)
-        receive_account.amount += body.amount
-        session.commit()
-        session.refresh(send_account)
-        session.refresh(receive_account)
-        CreateTransaction(body.receive_account_id,body.send_account_id,"Send",body.amount,session)
-        return JSONResponse(content={"SUCCESS":"Transaction effectuée"})
-    elif send_account.amount < body.amount:
-        return JSONResponse(content={"ERROR":"Fonds insuffisant"})
-    elif body.send_account_id != body.receive_account_id:
-        return JSONResponse(content={"ERROR":"Le compte destinataire doit être différent du compte d'envoi"})
-    else:
-        return JSONResponse(content={"ERROR":"Montant Négatif"})
+def confirmTransaction(transactionId, session):
+    transaction = session.get(Transaction,transactionId)
+    transaction.status = "Validée"
+    session.commit()
+    session.refresh(transaction)
+    return transaction
 
-@app.put("/cancel") # Story 10
-def cancel():
-    return {}
+def cancelTransaction(transactionId, session):
+    transaction = session.get(Transaction,transactionId)
+    transaction.status = "Annulée"
+    session.commit()
+    session.refresh(transaction)
+    return transaction
+
+# Dictionnaire pour stocker les events d'attente par compte
+pending_send_events = {}
+
+@app.put("/send") # Story 7
+async def send(body: GetSendInformation, session = Depends(get_session)):
+    # Crée un event pour ce compte
+    event = asyncio.Event()
+    pending_send_events[body.send_account_id] = event
+    transaction = CreateTransaction(body.receive_account_id,body.send_account_id,"Send",body.amount,session)
+    try:
+        # Attente de 5 secondes ou annulation
+        await asyncio.wait_for(event.wait(), timeout=5)
+        confirmTransaction(transaction.id, session)
+        send_account = session.get(Account,body.send_account_id)
+        if send_account.amount >= body.amount and body.amount > 0 and body.send_account_id != body.receive_account_id:
+            send_account.amount -= body.amount
+            receive_account = session.get(Account,body.receive_account_id)
+            receive_account.amount += body.amount
+            session.commit()
+            session.refresh(send_account)
+            session.refresh(receive_account)
+            return JSONResponse(content={"SUCCESS":"Transaction effectuée"})
+        elif send_account.amount < body.amount:
+            return JSONResponse(content={"ERROR":"Fonds insuffisant"})
+        elif body.send_account_id != body.receive_account_id:
+            return JSONResponse(content={"ERROR":"Le compte destinataire doit être différent du compte d'envoi"})
+        else:
+            return JSONResponse(content={"ERROR":"Montant Négatif"})
+    except asyncio.TimeoutError:
+        cancelTransaction(transaction.id, session)
+        return {"message": f"Envoi annulé pour le compte {body.send_account_id}"}
+    finally:
+        # Nettoyage de l'event
+        pending_send_events.pop(body.send_account_id, None)
 
 @app.put("/close-account") # Story 12
-def closeAccount():
-    return {}
+def closeAccount(body: CloseAccount, session = Depends(get_session)):
+    account = session.get(Account,body.account_id)
+    if account.type == "Principal":
+        return JSONResponse(content={"ERROR":"Vous ne pouvez pas fermer un compte principal"})
+    transactions = session.exec(select(Transaction).where((Transaction.start_account_id == account.id) 
+                                                          | (Transaction.end_account_id == account.id)
+                                                          , Transaction.status == "En cours")).all()
+    if len(transactions) > 0:
+        return JSONResponse(content={"ERROR":"Vous ne pouvez pas fermer un compte avec des transactions associées"})
+    account.open = False
+    if account.amount != 0:
+        user = session.get(User,account.user_id)
+        mainAccount = session.exec(select(Account).where(Account.user_id == user.id,Account.type == "Principal",Account.open == True)).first()
+        if mainAccount is None:
+            return JSONResponse(content={"ERROR":"Vous devez posséder un compte principal ouvert pour fermer ce compte"})
+        else:
+            mainAccount.amount += account.amount
+            session.commit()
+            session.refresh(mainAccount)
+            CreateTransaction(mainAccount.id,account.id,"Transfer",account.amount,session)
+    session.commit()
+    session.refresh(account)
+    return {"SUCCESS":"Compte fermé"}
+
+@app.put("/cancel") # Story 10
+async def cancel(body: CancelTransaction):
+    event = pending_send_events.get(body.account_id)
+    if event:
+        event.set()
+        return {"message": f"Annulation reçue pour le compte {body.account_id}"}
+    else:
+        return {"message": f"Aucune opération d'envoi en attente pour le compte {body.account_id}"}
 
 # Requêtes POST
 
