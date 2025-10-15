@@ -110,26 +110,6 @@ async def validateTransactions():
             session.refresh(transaction)
         print(f"[DEBUG] Batch exécuté à {datetime.now()}, {len(transactions)} transactions validées.")
         pass
-    
-
-# ======================
-# SCHEMAS Pydantic
-# ======================
-
-class GetAccount(BaseModel):
-    id: int
-
-class GetAccounts(BaseModel):
-    user_id: int
-
-class GetSendInformation(BaseModel):
-    send_account_id: int
-    receive_account_id: int
-    amount: float
-
-class CreateAccount(BaseModel):
-    user_id: int
-    type: str
 
 # ======================
 # ROUTES GET
