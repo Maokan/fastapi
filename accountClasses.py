@@ -21,3 +21,9 @@ class GetSendInformation(BaseModel):
 class CreateAccount(BaseModel):
     user_id: int
     type: str
+
+class CreateBeneficiary(BaseModel):
+    first_name: str
+    name: str 
+    account_number: str
+    account_id: int 

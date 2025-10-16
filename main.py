@@ -137,7 +137,7 @@ def account(body: GetAccount, session = Depends(get_session)) -> Account:
 
 @app.get("/accounts") # Story 9
 def accounts(body: GetAccounts, session = Depends(get_session)) -> list[Account]:
-    accounts = session.exec(select(Account).where(Account.user_id == body.user_id,Account.open == true).order_by(col(Account.id).desc())).all()
+    accounts = session.exec(select(Account).where(Account.user_id == body.user_id,Account.open == True).order_by(col(Account.id).desc())).all()
     return accounts
 
 @app.get("/transactions")
@@ -274,9 +274,25 @@ def createAccount(user_id: int, type: str, session):
     session.refresh(account)
     return account
 
+def createBeneficiary(first_name: str, name: str, account_number: str, account_id: int , session):
+    beneficiary = Beneficiary(first_name = first_name, name = name, account_number = account_number, account_id = account_id)
+    session.add(beneficiary)
+    session.commit()
+    session.refresh(beneficiary)
+    return beneficiary
+
 @app.post("/sign-in") # Story 1
 def createUser(session = Depends(get_session)):
-    return {"SUCCESS":"Utilisateur créé avec succès"}
+    #Temporaire pour but de test, à supprimer dans le merge et garder la story 1
+    user = User( username = "test", adress_mail = "test@gmail.com", password = "testpwd", name = "testname", first_name = "testfirstname")
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    user2 = User( username = "test2", adress_mail = "test2@gmail.com", password = "testpwd2", name = "testname2", first_name = "testfirstname2")
+    session.add(user2)
+    session.commit()
+    session.refresh(user2)
+    return {"SUCCESS": "Utilisateurs créé avec succès"}
 
 @app.post("/open-account")
 def openAccount(body: CreateAccount, session=Depends(get_session)):
@@ -294,8 +310,21 @@ def openAccount(body: CreateAccount, session=Depends(get_session)):
     if len(accounts_count) >= 5:
         return JSONResponse(content={"ERROR": "Un utilisateur ne peut pas avoir plus de 5 comptes"})
     account = createAccount(body.user_id, body.type, session)
-    return {"SUCCESS": f"Compte ouvert avec l'id : {account.id}"}
+    return {"SUCCESS": f"Compte ouvert avec l'id : {account.id}, Numéro de compte : {account.account_number}"}
 
 @app.post("/beneficiary")
-def beneficiary():
-    return {}
+def beneficiary(body: CreateBeneficiary, session=Depends(get_session)):
+    if not session.get(Account, body.account_id):
+        return JSONResponse(content={"ERROR": "Le compte n'existe pas"})
+    if not session.exec(select(Account).where(Account.account_number == body.account_number)).first():
+        return JSONResponse(content={"ERROR": "Le numéro de compte est incorrect"})
+    if not session.get(Account, body.account_id).open:
+        return JSONResponse(content={"ERROR": "Le compte doit être ouvert pour ajouter un bénéficiaire"})
+    if session.exec(select(Beneficiary).where(Beneficiary.account_id == body.account_id, Beneficiary.account_number == body.account_number, Beneficiary.name == body.name, Beneficiary.first_name == body.first_name )).first():
+        return JSONResponse(content={"ERROR": "Le bénéficiaire existe déjà"})
+    if not session.exec(select(User).where(User.name == body.name, User.first_name == body.first_name)).first():
+        return JSONResponse(content={"ERROR": "Le nom ou le prénom est incorrect"})
+    if session.exec(select(User).where(User.name == body.name, User.first_name == body.first_name)).first().id == session.get(Account, body.account_id).user_id:
+        return JSONResponse(content={"ERROR": "Vous ne pouvez pas vous ajouter en bénéficiaire à un compte qui vous appartient"})
+    beneficiary = createBeneficiary(body.first_name, body.name, body.account_number, body.account_id, session)
+    return {"SUCCESS": f"Bénéficiaire ajouté avec succès avec l'id : {beneficiary.id}"}
