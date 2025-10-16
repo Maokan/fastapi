@@ -149,8 +149,9 @@ def transaction():
     return {}
 
 @app.get("/beneficiaries")
-def beneficiaries():
-    return {}
+def beneficiaries(body : GetBeneficiaries, session = Depends(get_session)) -> list[Beneficiary]:
+    beneficiaries = session.exec(select(Beneficiary).join(Account).where(Account.user_id == body.user_id)).all()
+    return beneficiaries
 
 # ======================
 # ROUTES PUT
@@ -312,7 +313,7 @@ def openAccount(body: CreateAccount, session=Depends(get_session)):
     account = createAccount(body.user_id, body.type, session)
     return {"SUCCESS": f"Compte ouvert avec l'id : {account.id}, Numéro de compte : {account.account_number}"}
 
-@app.post("/beneficiary")
+@app.post("/add-beneficiary")
 def beneficiary(body: CreateBeneficiary, session=Depends(get_session)):
     if not session.get(Account, body.account_id):
         return JSONResponse(content={"ERROR": "Le compte n'existe pas"})

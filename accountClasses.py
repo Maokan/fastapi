@@ -18,6 +18,9 @@ class GetSendInformation(BaseModel):
     receive_account_id: int
     amount: float
 
+class GetBeneficiaries(BaseModel):
+    user_id: int
+
 class CreateAccount(BaseModel):
     user_id: int
     type: str
