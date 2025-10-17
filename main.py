@@ -141,12 +141,16 @@ def accounts(body: GetAccounts, session = Depends(get_session)) -> list[Account]
     return accounts
 
 @app.get("/transactions")
-def transactions():
-    return {}
+def transactions(body: GetTransactions, session = Depends(get_session)):
+    transactions = session.exec(select(Transaction).where((Transaction.start_account_id == body.account_id) | (Transaction.end_account_id == body.account_id)).order_by(col(Transaction.id).desc())).all()
+    return transactions
 
 @app.get("/transaction")
-def transaction():
-    return {}
+def transaction(body: GetTransaction, session = Depends(get_session)):
+    transaction = session.get(Transaction,body.transaction_id)
+    if transaction:
+        return transaction
+    return {"ERROR":"Transaction innexistante"}
 
 @app.get("/beneficiaries")
 def beneficiaries():

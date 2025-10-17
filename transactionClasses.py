@@ -7,3 +7,9 @@ class GetSendInformation(BaseModel):
 
 class CancelTransaction(BaseModel):
     transaction_id:int
+
+class GetTransactions(BaseModel):
+    account_id:int
+
+class GetTransaction(BaseModel):
+    transaction_id:int
