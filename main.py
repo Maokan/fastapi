@@ -46,7 +46,7 @@ class Transaction(SQLModel, table=True):
     transaction_date: Optional[datetime] = Field(sa_column=Column(
         TIMESTAMP(timezone=True),
         nullable=False,
-        server_default=text("CURRENT_DATETIME"),
+        server_default=text("CURRENT_TIMESTAMP"),
         index=True
     ))
     amount: float = Field(index=True)
