@@ -293,19 +293,6 @@ def createBeneficiary(first_name: str, name: str, account_number: str, account_i
     session.refresh(beneficiary)
     return beneficiary
 
-@app.post("/sign-in") # Story 1
-def createUser(session = Depends(get_session)):
-    #Temporaire pour but de test, à supprimer dans le merge et garder la story 1
-    user = User( username = "test", adress_mail = "test@gmail.com", password = "testpwd", name = "testname", first_name = "testfirstname")
-    session.add(user)
-    session.commit()
-    session.refresh(user)
-    user2 = User( username = "test2", adress_mail = "test2@gmail.com", password = "testpwd2", name = "testname2", first_name = "testfirstname2")
-    session.add(user2)
-    session.commit()
-    session.refresh(user2)
-    return {"SUCCESS": "Utilisateurs créé avec succès"}
-
 @app.post("/open-account")
 def openAccount(body: CreateAccount, session=Depends(get_session)):
     if not session.get(User, body.user_id):
@@ -384,4 +371,5 @@ def register(body: CreateUser, session: Session = Depends(get_session)):
         session.add(user)
         session.commit()
         session.refresh(user)
+        createAccount(user.id, "Principal", session)
     return user
