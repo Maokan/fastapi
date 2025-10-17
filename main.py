@@ -115,6 +115,43 @@ async def validateTransactions():
         print(f"[DEBUG] Batch exécuté à {datetime.now()}, {len(transactions)} transactions validées.")
         pass
 
+def CreateTransaction(outAccountId,entryAccountId,transactionType,amount, session):
+    if entryAccountId == 0:
+        transaction = Transaction(type=transactionType,end_account_id=outAccountId,amount=amount)
+    else:
+        transaction = Transaction(type=transactionType,start_account_id=entryAccountId,end_account_id=outAccountId,
+                              amount=amount)
+    session.add(transaction)
+    session.commit()
+    session.refresh(transaction)
+    return transaction
+
+def confirmTransaction(transactionId, session):
+    transaction = session.get(Transaction,transactionId)
+    transaction.status = "Validée"
+    session.commit()
+    session.refresh(transaction)
+    return transaction
+
+def createAccount(user_id: int, type: str, session):
+    accountNumber = randint(10000000, 99999999)
+    if ( type == "Principal" ):
+        startamount = 100
+    else:
+        startamount = 0
+    account = Account(type=type, amount=startamount, user_id=user_id, account_number=str(accountNumber))
+    session.add(account)
+    session.commit()
+    session.refresh(account)
+    return account
+
+def createBeneficiary(first_name: str, name: str, account_number: str, account_id: int , session):
+    beneficiary = Beneficiary(first_name = first_name, name = name, account_number = account_number, account_id = account_id)
+    session.add(beneficiary)
+    session.commit()
+    session.refresh(beneficiary)
+    return beneficiary
+
 # ======================
 # ROUTES GET
 # ======================
@@ -168,18 +205,6 @@ def beneficiaries(body : GetBeneficiaries, session = Depends(get_session)) -> li
 # ROUTES PUT
 # ======================
 
-def CreateTransaction(outAccountId, entryAccountId, transactionType, amount, session):
-    transaction = Transaction(
-        transactionType=transactionType,
-        start_account_id=entryAccountId,
-        end_account_id=outAccountId,
-        amount=amount
-    )
-    session.add(transaction)
-    session.commit()
-    session.refresh(transaction)
-    return transaction
-
 @app.put("/deposit")
 def deposit(body: SetDeposit, session = Depends(get_session)):
     if body.amount > 0 and body.amount <= 2000:
@@ -195,24 +220,6 @@ def deposit(body: SetDeposit, session = Depends(get_session)):
         return {"ERROR":"Montant supérieur à 2000"}
     else:
         return {"ERROR":"Montant négatif"}
-
-def CreateTransaction(outAccountId,entryAccountId,transactionType,amount, session):
-    if entryAccountId == 0:
-        transaction = Transaction(type=transactionType,end_account_id=outAccountId,amount=amount)
-    else:
-        transaction = Transaction(type=transactionType,start_account_id=entryAccountId,end_account_id=outAccountId,
-                              amount=amount)
-    session.add(transaction)
-    session.commit()
-    session.refresh(transaction)
-    return transaction
-
-def confirmTransaction(transactionId, session):
-    transaction = session.get(Transaction,transactionId)
-    transaction.status = "Validée"
-    session.commit()
-    session.refresh(transaction)
-    return transaction
 
 @app.put("/send") # Story 7
 async def send(body: GetSendInformation, session = Depends(get_session)):
@@ -273,25 +280,6 @@ async def cancel(body: CancelTransaction,session = Depends(get_session)):
 # ======================
 # ROUTES POST
 # ======================
-
-def createAccount(user_id: int, type: str, session):
-    accountNumber = randint(10000000, 99999999)
-    if ( type == "Principal" ):
-        startamount = 100
-    else:
-        startamount = 0
-    account = Account(type=type, amount=startamount, user_id=user_id, account_number=str(accountNumber))
-    session.add(account)
-    session.commit()
-    session.refresh(account)
-    return account
-
-def createBeneficiary(first_name: str, name: str, account_number: str, account_id: int , session):
-    beneficiary = Beneficiary(first_name = first_name, name = name, account_number = account_number, account_id = account_id)
-    session.add(beneficiary)
-    session.commit()
-    session.refresh(beneficiary)
-    return beneficiary
 
 @app.post("/open-account")
 def openAccount(body: CreateAccount, session=Depends(get_session)):
