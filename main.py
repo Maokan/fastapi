@@ -1,7 +1,76 @@
 from fastapi import FastAPI
+from datetime import date
+from typing import Optional
+from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text, Session, create_engine
 
 app = FastAPI()
 
+class User(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    username: str = Field(index=True)
+    adress_mail: str = Field(index=True)
+    password: str = Field(index=True)
+    name: str = Field(index=True)
+    first_name: str = Field(index=True)
+
+class Account(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    type: str = Field(index=True)
+    created_date: Optional[date] = Field(sa_column=Column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_DATE"),
+        index=True
+    ))
+    amount: float = Field(index=True)
+    user_id: int = Field(index=True, foreign_key="user.id")
+    open: bool = Field(index=True, default=True)
+    account_number: str = Field(index=True)
+
+class Transaction(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    type: str = Field(index=True)
+    transaction_date: Optional[date] = Field(sa_column=Column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_DATE"),
+        index=True
+    ))
+    amount: float = Field(index=True)
+    start_account_id: int = Field(index=True, foreign_key="account.id")
+    end_account_id: int = Field(index=True, foreign_key="account.id")
+    status: str = Field(index=True, default="En cours")
+
+class Beneficiary(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    first_name: str = Field(index=True)
+    name: str = Field(index=True)
+    creation_date: Optional[date] = Field(sa_column=Column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_DATE"),
+        index=True
+    ))
+    account_number: str = Field(index=True)
+    account_id: int = Field(index=True, foreign_key="account.id")
+
+sqlite_file_name = "database.db"
+sqlite_url = f"sqlite:///{sqlite_file_name}"
+
+connect_args = {"check_same_thread": False}
+engine = create_engine(sqlite_url, connect_args=connect_args)
+
+def create_db_and_tables():
+    SQLModel.metadata.create_all(engine)
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+
+@app.on_event("startup")
+def on_startup():
+    create_db_and_tables()
+    
 # Requêtes GET
 
 @app.get("/")
