@@ -1,13 +1,15 @@
-from fastapi import FastAPI, Depends, Response
+from fastapi import FastAPI, Depends
 from fastapi.responses import JSONResponse
 from datetime import date, datetime, timedelta
-from typing import Optional, Any
+from typing import Optional
 from sqlmodel import *
 from accountClasses import *
 from transactionClasses import *
-from pydantic import BaseModel
+from userClasses import *
 from random import *
 import asyncio
+import bcrypt
+from fastapi.security import HTTPBearer
 
 print("[DEBUG] Début du chargement de main.py")
 app = FastAPI()
@@ -24,7 +26,6 @@ class User(SQLModel, table=True):
     name: str = Field(index=True)
     first_name: str = Field(index=True)
 
-
 class Account(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     type: str = Field(index=True)
@@ -39,7 +40,6 @@ class Account(SQLModel, table=True):
     open: bool = Field(index=True, default=True)
     account_number: str = Field(index=True)
 
-
 class Transaction(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     type: str = Field(index=True)
@@ -53,7 +53,6 @@ class Transaction(SQLModel, table=True):
     start_account_id: int = Field(index=True, foreign_key="account.id")
     end_account_id: int = Field(index=True, foreign_key="account.id")
     status: str = Field(index=True, default="En cours")
-
 
 class Beneficiary(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
@@ -73,6 +72,11 @@ sqlite_url = f"sqlite:///{sqlite_file_name}"
 
 connect_args = {"check_same_thread": False}
 engine = create_engine(sqlite_url, connect_args=connect_args)
+
+secret_key = "SLVM"
+Algorithm = "HS256"
+security = HTTPBearer(auto_error=False)
+global user_id
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
@@ -119,13 +123,16 @@ async def validateTransactions():
 def read_root():
     return {"message": "Bienvenue sur FastAPI!"}
 
-@app.get("/login")
-def login():
-    return {}
+@app.get("/users")
+def users(session = Depends(get_session)):
+    users = session.exec(select(User)).all()
+    return users
 
-@app.get("/user")
-def user():
-    return {}
+@app.get("/infos", response_model=GetUserInfos)
+def infos(session:Session = Depends(get_session)):
+        user = session.get(User, user_id)
+
+        return user
 
 @app.get("/account") # Story 5
 def account(body: GetAccount, session = Depends(get_session)) -> Account:
@@ -333,3 +340,48 @@ def beneficiary(body: CreateBeneficiary, session=Depends(get_session)):
         return JSONResponse(content={"ERROR": "Vous ne pouvez pas vous ajouter en bénéficiaire à un compte qui vous appartient"})
     beneficiary = createBeneficiary(body.first_name, body.name, body.account_number, body.account_id, session)
     return {"SUCCESS": f"Bénéficiaire ajouté avec succès avec l'id : {beneficiary.id}"}
+
+
+@app.post("/login")
+def login(body:GetUser, session:Session = Depends(get_session)):
+    # Recherche de l'utilisateur
+    statement = select(User).where(User.adress_mail == body.adress_mail)
+    mail = session.exec(statement).first()
+    if not mail:
+        return {"ERROR":"Adresse mail incorrecte"}
+    # Vérifie le mot de passe
+    if not bcrypt.checkpw(body.password.encode('utf-8'), mail.password):
+        return {"ERROR":"Mot de passe incorrect"}
+
+    global user_id
+    user_id = mail.id
+    return {"message": f"Welcome back, {mail.username} !"}
+
+@app.post("/users/")
+def create_user(body: CreateUser, session = Depends(get_session)) -> User:
+    user = User(name=body.name)
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
+@app.post("/getUser/")
+def create_item (getUser:GetUser)-> GetUser:
+    return GetUser
+    
+@app.post("/register")
+def register(body: CreateUser, session: Session = Depends(get_session)):
+    print(body.password)
+    chiffrement = bcrypt.hashpw(body.password.encode('utf-8'), bcrypt.gensalt())
+    user = User(name=body.name,username=body.username,adress_mail=body.adress_mail,password=chiffrement,first_name=body.first_name)
+         # Vérifie si l'utilisateur existe déjà
+    statement = select(User).where(User.adress_mail == body.adress_mail)
+    existing_user = session.exec(statement).first()
+    if existing_user:
+        return JSONResponse(content={"ERROR":"Utilisateur déjà existant"})
+    else:
+        print(chiffrement)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+    return user
