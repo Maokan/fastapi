@@ -203,27 +203,27 @@ def infos(session:Session = Depends(get_session),user_id: int = Depends(decrypt_
 
         return user
 
-@app.get("/account") # Story 5
-def account(body: GetAccount, session = Depends(get_session)) -> Account:
-    account = session.get(Account,body.id)
-    if account.open:
+@app.get("/account/{account_id}") # Story 5
+def account(account_id: int, session = Depends(get_session)) -> Account:
+    account = session.get(Account, account_id)
+    if account and account.open:
         return account
     return {"ERROR":"Compte innexistant"}
 
 
 @app.get("/accounts") # Story 9
-def accounts(body: GetAccounts, session = Depends(get_session),user_id: int = Depends(decrypt_token)) -> list[Account]:
+def accounts(session = Depends(get_session),user_id: int = Depends(decrypt_token)) -> list[Account]:
     accounts = session.exec(select(Account).where(Account.user_id == user_id,Account.open == True).order_by(col(Account.id).desc())).all()
     return accounts
 
-@app.get("/transactions")
-def transactions(body: GetTransactions, session = Depends(get_session)):
+@app.get("/transactions/{account_id}")
+def transactions(account_id:int, session = Depends(get_session)):
     transactions = session.exec(select(Transaction).where((Transaction.start_account_id == body.account_id) | (Transaction.end_account_id == body.account_id)).order_by(col(Transaction.id).desc())).all()
     return transactions
 
-@app.get("/transaction")
-def transaction(body: GetTransaction, session = Depends(get_session)):
-    transaction = session.get(Transaction,body.transaction_id)
+@app.get("/transaction/{transaction_id}")
+def transaction(transaction_id: int, session = Depends(get_session)):
+    transaction = session.get(Transaction,transaction_id)
     if transaction:
         return transaction
     return {"ERROR":"Transaction innexistante"}
@@ -365,7 +365,7 @@ def register(body: CreateUser, session: Session = Depends(get_session)):
     statement = select(User).where(User.adress_mail == body.adress_mail)
     existing_user = session.exec(statement).first()
     if existing_user:
-        return JSONResponse(content={"ERROR":"Utilisateur déjà existant"})
+        return JSONResponse(status_code=422, content={"ERROR":"Utilisateur déjà existant"})
     else:
         print(chiffrement)
         session.add(user)
