@@ -1,6 +1,7 @@
 # Lancer le serveur après avoir lancé VSC en administrateur puis faire la commande "fastapi dev main.py"
 from fastapi import FastAPI, Depends
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import date, datetime, timedelta
 from typing import Optional
 from sqlmodel import *
@@ -15,6 +16,18 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 print("[DEBUG] Début du chargement de main.py")
 app = FastAPI()
+
+# ======================
+# CONFIGURATION CORS
+# ======================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # À restreindre en production (ex: ["http://localhost:3000"])
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ======================
 # MODELES DE DONNÉES
