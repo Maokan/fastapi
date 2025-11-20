@@ -22,7 +22,6 @@ class GetBeneficiaries(BaseModel):
     user_id: int
 
 class CreateAccount(BaseModel):
-    user_id: int
     type: str
 
 class CreateBeneficiary(BaseModel):
