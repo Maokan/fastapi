@@ -218,7 +218,7 @@ def accounts(session = Depends(get_session),user_id: int = Depends(decrypt_token
 
 @app.get("/transactions/{account_id}")
 def transactions(account_id:int, session = Depends(get_session)):
-    transactions = session.exec(select(Transaction).where((Transaction.start_account_id == body.account_id) | (Transaction.end_account_id == body.account_id)).order_by(col(Transaction.id).desc())).all()
+    transactions = session.exec(select(Transaction).where((Transaction.start_account_id == account_id) | (Transaction.end_account_id == account_id)).order_by(col(Transaction.id).desc())).all()
     return transactions
 
 @app.get("/transaction/{transaction_id}")
