@@ -129,23 +129,34 @@ async def batch():
 
 async def validateTransactions():
     with Session(engine) as session:
-        five_seconds_ago = datetime.now() - timedelta(seconds=5)
-        transactions = session.exec(
-            select(Transaction).where(
-                Transaction.status == "En cours",
-                Transaction.type == "Send",
-                Transaction.transaction_date < five_seconds_ago
-            )
-        ).all()
-        for transaction in transactions:
-            transaction.status = "Validée"
-            account = session.get(Account, transaction.end_account_id)
-            account.amount += transaction.amount
-            session.commit()
-            session.refresh(account)
-            session.refresh(transaction)
-        print(f"[DEBUG] Batch exécuté à {datetime.now()}, {len(transactions)} transactions validées.")
-        pass
+        try:
+            five_seconds_ago = datetime.now() - timedelta(seconds=5)
+            transactions = session.exec(
+                select(Transaction).where(
+                    Transaction.status == "En cours",
+                    Transaction.type == "Send",
+                    Transaction.transaction_date < five_seconds_ago
+                )
+            ).all()
+            for transaction in transactions:
+                account = session.get(Account, transaction.end_account_id)
+                if account:
+                    transaction.status = "Validée"
+                    account.amount += transaction.amount
+                    session.commit()
+                    session.refresh(account)
+                    session.refresh(transaction)
+                else:
+                    print(f"[WARNING] Compte {transaction.end_account_id} introuvable pour transaction {transaction.id}")
+                    transaction.status = "Error"
+                    account = session.get(Account, transaction.start_account_id)
+                    account.amount += transaction.amount
+                    session.commit()
+                    session.refresh(account)
+                    session.refresh(transaction)
+            print(f"[DEBUG] Batch exécuté à {datetime.now()}, {len(transactions)} transactions traitées.")
+        except Exception as e:
+            print(f"[ERROR] Erreur dans validateTransactions: {e}")
 
 def CreateTransaction(outAccountId,entryAccountId,transactionType,amount, session):
     if entryAccountId == 0:
