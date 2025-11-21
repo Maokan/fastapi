@@ -246,7 +246,7 @@ def deposit(body: SetDeposit, session = Depends(get_session)):
         account.amount += body.amount
         session.commit()
         session.refresh(account)
-        CreateTransaction(body.receive_account_id,0,"Deposit",body.amount)
+        #CreateTransaction(body.receive_account_id,0,"Deposit",body.amount)
         return {"Nouveau Solde":account.amount}
     elif body.amount > 0:
         return {"ERROR":"Montant supérieur à 2000"}
