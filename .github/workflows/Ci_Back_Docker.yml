@@ -31,7 +31,7 @@ jobs:
           push: true
           tags: ghcr.io/maokan/fastapi:latest
 
-- name: generate artifacts
+      - name: generate artifacts
         run: |
          pip install sphinx
          cd docs
