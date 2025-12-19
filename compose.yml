@@ -1,21 +1,16 @@
 services:
   back:
+    image: "leaspeter/fastapi:latest"
+    container_name: "fastapi-docker"
+    build: .
+    ports:
+      - "8000:8000"
+
+  front:
     image: "leaspeter/reactbank:latest"
     container_name: "reactbank-docker"
     build: .
     ports:
       - "3000:3000"
-    networks:
-      - network-projet
-    
-
-  front:
-    image: "leaspeter/fastapi:latest"
-    container_name: "fastapi-docker"
-    build: .
-    ports:
-      - "3000:3000"
-    networks:
-      - network-projet
     depends_on:
       - back
