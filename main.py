@@ -16,6 +16,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 print("[DEBUG] Début du chargement de main.py")
 app = FastAPI()
+FOREIGNKEY = "account.id"
+DEFAULT = "En cours"
 
 # ======================
 # CONFIGURATION CORS
@@ -65,9 +67,9 @@ class Transaction(SQLModel, table=True):
         index=True
     ))
     amount: float = Field(index=True)
-    start_account_id: int = Field(index=True, foreign_key="account.id")
-    end_account_id: int = Field(index=True, foreign_key="account.id")
-    status: str = Field(index=True, default="En cours")
+    start_account_id: int = Field(index=True, foreign_key=FOREIGNKEY)
+    end_account_id: int = Field(index=True, foreign_key=FOREIGNKEY)
+    status: str = Field(index=True, default=DEFAULT)
 
 class Beneficiary(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
@@ -80,7 +82,7 @@ class Beneficiary(SQLModel, table=True):
         index=True
     ))
     account_number: str = Field(index=True)
-    account_id: int = Field(index=True, foreign_key="account.id")
+    account_id: int = Field(index=True, foreign_key=FOREIGNKEY)
 
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
@@ -94,20 +96,19 @@ bearer_scheme = HTTPBearer()
 
 
 def generate_token(user: User):
-    Payload = {
+    payload = {
         "id": user.id,
         "username": user.username,
         "email": user.adress_mail,
         "exp": datetime.utcnow() + timedelta(hours=2)
     }
-    return jwt.encode(Payload, secret_key, algorithm=Algorithm)
+    return jwt.encode(payload, secret_key, algorithm=Algorithm)
 
 
 def decrypt_token (authorization: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     token = authorization.credentials
     payload = jwt.decode(token, secret_key, algorithms=[Algorithm])
     return payload["id"]
-    #return jwt.decode(authorization.credentials, secret_key, algorithms=Algorithm)
     
 
 def create_db_and_tables():
@@ -133,7 +134,7 @@ async def validateTransactions():
             five_seconds_ago = datetime.now() - timedelta(seconds=5)
             transactions = session.exec(
                 select(Transaction).where(
-                    Transaction.status == "En cours",
+                    Transaction.status == DEFAULT,
                     Transaction.type == "Send",
                     Transaction.transaction_date < five_seconds_ago
                 )
@@ -291,7 +292,7 @@ def closeAccount(body: CloseAccount, session = Depends(get_session),user_id: int
         return JSONResponse(content={"ERROR":"Vous ne pouvez pas fermer un compte principal"})
     transactions = session.exec(select(Transaction).where((Transaction.start_account_id == account.id) 
                                                           | (Transaction.end_account_id == account.id)
-                                                          , Transaction.status == "En cours")).all()
+                                                          , Transaction.status == DEFAULT)).all()
     if len(transactions) > 0:
         return JSONResponse(content={"ERROR":"Vous ne pouvez pas fermer un compte avec des transactions associées"})
     account.open = False
