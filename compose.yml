@@ -1,16 +1,25 @@
 services:
+# Prepare the backend image
   back:
+    # Use FastAPI image
     image: "leaspeter/fastapi:latest"
+    # Create or recreate a container for FastAPI image
     container_name: "fastapi-docker"
     build: .
+    # Use the 8000 port
     ports:
       - "8000:8000"
 
+# Prepare the frontend image
   front:
+    # Use the ReactBank image
     image: "leaspeter/reactbank:latest"
+    # Create or recreate a container for ReactBank image
     container_name: "reactbank-docker"
     build: .
+    # Use the 3000 port
     ports:
       - "3000:3000"
+    # Need the backend container 
     depends_on:
       - back
